@@ -5,8 +5,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -33,6 +34,7 @@ var (
 
 type model struct {
 	textInput textinput.Model
+	spinner   spinner.Model
 	port      int
 	ip        string
 	err       string
@@ -47,17 +49,22 @@ func initialModel() model {
 	ti.Width = 10
 	ti.Prompt = ""
 
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))
+
 	return model{
 		textInput: ti,
+		spinner:   s,
 	}
 }
 
 func (m model) Init() tea.Cmd {
-	return textinput.Blink
+	return tea.Batch(textinput.Blink, m.spinner.Tick)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
+	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -72,12 +79,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 		}
+
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 	}
 
-	m.textInput, cmd = m.textInput.Update(msg)
+	m.textInput, _ = m.textInput.Update(msg)
 	m.validate()
 
-	return m, cmd
+	return m, tea.Batch(cmds...)
 }
 
 func (m *model) validate() {
@@ -114,6 +126,8 @@ func (m model) View() string {
 	b.WriteString("\n\n")
 
 	b.WriteString(labelStyle.Render("Port: "))
+	b.WriteString(m.spinner.View())
+	b.WriteString(" ")
 	b.WriteString(m.textInput.View())
 	b.WriteString("\n\n")
 
