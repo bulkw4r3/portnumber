@@ -1,14 +1,18 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	_ "modernc.org/sqlite"
 )
 
 var (
@@ -39,9 +43,37 @@ type model struct {
 	ip        string
 	err       string
 	quitting  bool
+	db        *sql.DB
 }
 
-func initialModel() model {
+func openDB() (*sql.DB, error) {
+	db, err := sql.Open("sqlite", "portnumber.db")
+	if err != nil {
+		return nil, err
+	}
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS results (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			port INTEGER NOT NULL,
+			ip TEXT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		return nil, err
+	}
+	return db, nil
+}
+
+func saveResult(db *sql.DB, port int, ip string) error {
+	_, err := db.Exec(
+		"INSERT INTO results (port, ip, created_at) VALUES (?, ?, ?)",
+		port, ip, time.Now(),
+	)
+	return err
+}
+
+func initialModel(db *sql.DB) model {
 	ti := textinput.New()
 	ti.Placeholder = "1-48"
 	ti.Focus()
@@ -56,6 +88,7 @@ func initialModel() model {
 	return model{
 		textInput: ti,
 		spinner:   s,
+		db:        db,
 	}
 }
 
@@ -75,6 +108,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case tea.KeyEnter:
 			if m.err == "" && m.ip != "" {
+				if m.db != nil {
+					if err := saveResult(m.db, m.port, m.ip); err != nil {
+						fmt.Fprintf(os.Stderr, "db error: %v\n", err)
+					}
+				}
 				m.quitting = true
 				return m, tea.Quit
 			}
@@ -153,7 +191,14 @@ func (m model) View() string {
 }
 
 func main() {
-	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
+	db, err := openDB()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
+		return
+	}
+	defer db.Close()
+
+	p := tea.NewProgram(initialModel(db), tea.WithAltScreen())
 	m, err := p.Run()
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
