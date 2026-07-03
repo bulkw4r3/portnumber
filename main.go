@@ -152,7 +152,7 @@ func (m *model) validate() {
 	}
 
 	m.port = port
-	m.ip = fmt.Sprintf("172.16.76.%d", 48+port)
+	m.ip = fmt.Sprintf("172.16.76.%d", 47+port)
 	m.err = ""
 }
 
